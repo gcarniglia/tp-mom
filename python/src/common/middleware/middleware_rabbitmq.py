@@ -134,7 +134,6 @@ class MessageMiddlewareExchangeRabbitMQ(MessageMiddlewareExchange):
 	# Crea cola exclusiva
 	# Realiza el bind de la cola al exchange con las routing keys 
 	# indicadas en el constructor. 
-	# Solo para el consumidor, no tiene efecto para el productor.
 	def _declare_and_bind_queue_to_routing_keys(self):
 		result = self._channel.queue_declare(queue='',exclusive=True)
 		self._queue_name = result.method.queue
