@@ -7,10 +7,8 @@ class MessageMiddlewareQueueRabbitMQ(MessageMiddlewareQueue):
 	def __init__(self, host, queue_name):
 		self._connection = pika.BlockingConnection(pika.ConnectionParameters(host))
 		self._channel = self._connection.channel()
-		self._channel.queue_declare(queue=queue_name, durable=True, arguments={'x-queue-type': 'quorum'})
-
 		self._queue_name = queue_name
-
+		self._declare_consumer_queue()
 		self._on_message_callback = None
 
 		#Flags
@@ -40,7 +38,14 @@ class MessageMiddlewareQueueRabbitMQ(MessageMiddlewareQueue):
 		finally:
 			self._on_message_callback = None
 			self._consuming = False
+	
+	# Si no existe, crea cola durable con el nombre indicado en el constructor.
+	# Solo para el consumidor, no tiene efecto para el productor.
+	def _declare_consumer_queue(self):
+		self._channel.queue_declare(queue=self._queue_name, durable=True)
 
+	# Función adaptadora que convierte el callback del middleware
+	# al formato que utiliza pika.
 	def _adapt_callback(self, ch, method, properties, body):
 		def ack(): ch.basic_ack(delivery_tag=method.delivery_tag)
 		def nack(): ch.basic_nack(delivery_tag=method.delivery_tag)
@@ -86,18 +91,9 @@ class MessageMiddlewareExchangeRabbitMQ(MessageMiddlewareExchange):
 		self._channel = self._connection.channel()
 		self._channel.exchange_declare(exchange=exchange_name,exchange_type='direct',durable=True)
 		
-		result = self._channel.queue_declare(queue='',exclusive=True)
-		self._queue_name = result.method.queue
 		self._exchange_name = exchange_name
 		self._routing_keys = routing_keys
-
-		for routing_key in routing_keys:
-			self._channel.queue_bind(
-				queue=self._queue_name,
-				exchange=exchange_name,
-				routing_key=routing_key
-			)
-		
+		self._declare_and_bind_queue_to_routing_keys()
 		self._on_message_callback = None
 
 		#Flags
@@ -128,10 +124,26 @@ class MessageMiddlewareExchangeRabbitMQ(MessageMiddlewareExchange):
 			self._on_message_callback = None
 			self._consuming = False
 
+	# Función adaptadora que convierte el callback del middleware
+	# al formato que utiliza pika.
 	def _adapt_callback(self, ch, method, properties, body):
 		def ack(): ch.basic_ack(delivery_tag=method.delivery_tag)
 		def nack(): ch.basic_nack(delivery_tag=method.delivery_tag)
 		self._on_message_callback(body, ack, nack)
+
+	# Crea cola exclusiva
+	# Realiza el bind de la cola al exchange con las routing keys 
+	# indicadas en el constructor. 
+	# Solo para el consumidor, no tiene efecto para el productor.
+	def _declare_and_bind_queue_to_routing_keys(self):
+		result = self._channel.queue_declare(queue='',exclusive=True)
+		self._queue_name = result.method.queue
+		for routing_key in self._routing_keys:
+			self._channel.queue_bind(
+				queue=self._queue_name,
+				exchange=self._exchange_name,
+				routing_key=routing_key
+			)
 
 	#Si se estaba consumiendo desde la cola/exchange, se detiene la escucha. Si
 	#no se estaba consumiendo de la cola/exchange, no tiene efecto, ni levanta
