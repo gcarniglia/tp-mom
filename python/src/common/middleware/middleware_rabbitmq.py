@@ -86,8 +86,17 @@ class MessageMiddlewareExchangeRabbitMQ(MessageMiddlewareExchange):
 		self._channel = self._connection.channel()
 		self._channel.exchange_declare(exchange=exchange_name,exchange_type='direct',durable=True)
 		
-		#for routing in routing_keys:
-		#	self._channel.queue_bind(queue=queue_name, exchange=exchange_name, routing_key=routing)
+		result = self._channel.queue_declare(queue='',exclusive=True)
+		self._queue_name = result.method.queue
+		self._exchange_name = exchange_name
+		self._routing_keys = routing_keys
+
+		for routing_key in routing_keys:
+			self._channel.queue_bind(
+				queue=self._queue_name,
+				exchange=exchange_name,
+				routing_key=routing_key
+			)
 		
 		self._on_message_callback = None
 
@@ -141,7 +150,8 @@ class MessageMiddlewareExchangeRabbitMQ(MessageMiddlewareExchange):
 	#Si ocurre un error interno que no puede resolverse eleva MessageMiddlewareMessageError.
 	def send(self, message):
 		try:
-			self._channel.basic_publish(exchange='',routing_key=self._queue_name,body=message)
+			for routing_key in self._routing_keys:
+				self._channel.basic_publish(exchange=self._exchange_name,routing_key=routing_key,body=message)
 		except ConnectionError or pika.exceptions.AMQPConnectionError as e:
 			raise MessageMiddlewareDisconnectedError("Connection Error") from e
 		except Exception as e:
